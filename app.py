@@ -110,19 +110,19 @@ def parse_input_string(input_str):
     if not input_str:
         return []
     
-    Replace newlines with commas to ensure compatibility
+    #Replace newlines with commas to ensure compatibility
     cleaned_str = input_str.replace('\n', ',')
     
-     Replaces the non-breaking spaces or other common invisible characters
+     #Replaces the non-breaking spaces or other common invisible characters
     cleaned_str = cleaned_str.replace('\xa0', ' ')
     
-    Splits by comma
+    #Splits by comma
     tokens = cleaned_str.split(',')
     
-    Gets rid of the whitespace and filter empty strings
+    #Gets rid of the whitespace and filter empty strings
     tokens = [t.strip() for t in tokens if t.strip()]
     
-    Convert to floats with detailed error reporting.
+    #Converts to floats with detailed error reporting.
     result = []
     for i, t in enumerate(tokens):
         try:
@@ -291,3 +291,4 @@ with tab4:
                 st.error(f"Error: {e}")
     else:
         st.warning("Deep Learning model not loaded.")
+
