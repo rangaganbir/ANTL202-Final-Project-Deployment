@@ -54,7 +54,7 @@ st.title("ML Loan Dataset Model Deployment Dashboard")
 def load_models():
     models = {}
     
-    # 1. Load Loan Classifier Pipeline
+    #  Load Loan Classifier Pipeline
     try:
         loaded_model = joblib.load('best_loan_classifier_pipeline.joblib')
         patch_model_attributes(loaded_model)
@@ -71,7 +71,7 @@ def load_models():
         models['loan_pipeline'] = None
         st.error(f"Error loading Loan Classifier: {e}")
 
-    # 2. Load Regression Model
+    #  Load Regression Model
     try:
         with open('regression_model.pkl', 'rb') as f:
             loaded_model = pickle.load(f)
@@ -86,7 +86,7 @@ def load_models():
             models['regression'] = None
             st.warning(f"Regression Model not loaded: {e}")
 
-    # 3. Load General Classification Model
+    #  Load General Classification Model
     try:
         with open('classification_model.pkl', 'rb') as f:
             loaded_model = pickle.load(f)
@@ -101,7 +101,7 @@ def load_models():
             models['classifier'] = None
             st.warning(f"Classification Model not loaded: {e}")
 
-    # 4. Load Deep Learning Model
+    #  Load Deep Learning Model
     try:
         models['deep_learning'] = tf.keras.models.load_model('deep_learning_model.h5')
     except Exception as e:
@@ -117,19 +117,19 @@ def parse_input_string(input_str):
     if not input_str:
         return []
     
-    #   Replace newlines with commas (handles vertical copy-pastes)
+    # 1. Replace newlines with commas (handles vertical copy-pastes)
     cleaned_str = input_str.replace('\n', ',')
     
-    #   Replace non-breaking spaces or other common invisible chars
+    # 2. Replace non-breaking spaces or other common invisible chars
     cleaned_str = cleaned_str.replace('\xa0', ' ')
     
-    #   Split by comma
+    # 3. Split by comma
     tokens = cleaned_str.split(',')
     
-    #   Strip whitespace and filter empty strings
+    # 4. Strip whitespace and filter empty strings
     tokens = [t.strip() for t in tokens if t.strip()]
     
-    #   Convert to floats with detailed error reporting
+    # 5. Convert to floats with detailed error reporting
     result = []
     for i, t in enumerate(tokens):
         try:
@@ -185,6 +185,33 @@ with tab1:
             open_acc = st.number_input("Open Accounts", value=5)
             
         if st.button("Predict Loan Status", type="primary"):
+            is_rejected = False
+            rejection_reason = ""
+            
+            #  Loan to Income Check (Loan should not exceed 5x annual income)
+            if loan_amnt > 5 * annual_inc:
+                is_rejected = True
+                rejection_reason = "Manual rejection: Loan amount exceeds 5 times annual income."
+            
+            #  Extreme DTI Check (DTI > 45% is usually high-risk)
+            elif dti > 45.0:
+                 is_rejected = True
+                 rejection_reason = "Manual rejection: Debt-to-Income ratio exceeds 45.0% threshold."
+
+            #  Low Income Check
+            elif annual_inc < 10000:
+                is_rejected = True
+                rejection_reason = "Manual rejection: Annual income is too low for loan processing."
+
+
+            if is_rejected:
+                st.error(f"Prediction: Automatically Rejected (0.00%)")
+                st.warning(rejection_reason)
+                # Skip model prediction entirely
+                return
+
+
+            # If inputs pass sanity checks, proceed to model prediction
             term_val = int(term.split()[0]) 
             emp_val = 0
             if emp_length:
@@ -216,6 +243,7 @@ with tab1:
                 'current_balance': 5000,
                 'public_records': 0,
                 'emp_length': emp_val,
+                'home_ownership': home_ownership 
             }])
             
             try:
@@ -231,7 +259,7 @@ with tab1:
     else:
         st.warning("Loan model not loaded.")
 
-# --- TAB 2: The Regression Model (Input forced to named DataFrame) ---
+# --- TAB 2: The Regression Model  ---
 with tab2:
     st.header("Numerical Regression")
     if models.get('regression'):
@@ -262,7 +290,7 @@ with tab2:
     else:
         st.warning("Regression model not loaded.")
 
-# --- TAB 3: The General Classification (Input forced to named DataFrame) ---
+# --- TAB 3: The General Classification  ---
 with tab3:
     st.header("General Classification")
     if models.get('classifier'):
