@@ -1,1 +1,17 @@
 
+. Instructions to Add this to GitHub
+Since the repository is already created, follow these steps to add the README:
+
+Go to your Repo: rangaganbir/ANTL202-Final-Project-Deployment
+
+Create/Edit File:
+
+If README.md exists: Click the file name, then click the Pencil icon (✏️) in the top right to edit it.
+
+If it does NOT exist: Click the "Add file" button > "Create new file". Name the file README.md.
+
+Paste: Copy the text from the file block above and paste it into the GitHub editor.
+
+Commit: Scroll to the bottom, write a message like "Added project documentation", and click the green Commit changes button.
+
+Final Step (After Deployment): Once your Streamlit app is running and you have the website link (e.g., https://antl202-project.streamlit.app), go back to GitHub, edit this README, and replace [INSERT_YOUR_STREAMLIT_APP_LINK_HERE] with the real link.
