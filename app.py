@@ -3,13 +3,13 @@ import pandas as pd
 import numpy as np
 import joblib
 
-# --- PAGE CONFIGURATION ---
+# --- OUR MAIN PAGE CONFIGURATION ---
 st.set_page_config(
     page_title="Loan DataSet Platform",
     layout="wide"
 )
 
-# --- LOAD MODELS ---
+# --- LOADS THE  MODELS ---
 @st.cache_resource
 def load_models():
     """
@@ -22,7 +22,7 @@ def load_models():
 
 clf_pipeline, reg_pipeline = load_models()
 
-# --- SIDEBAR INPUTS ---
+# --- OUR SIDEBAR INPUTS ---
 # Using a standard bank icon image URL instead of emoji
 st.sidebar.image("https://cdn-icons-png.flaticon.com/512/2830/2830284.png", width=100)
 st.sidebar.title("Loan Application")
@@ -68,10 +68,10 @@ def user_input_features():
 
 input_df = user_input_features()
 
-# --- MAIN DASHBOARD ---
+# --- THE MAIN DASHBOARD ---
 st.title("Loan DataSet")
 st.markdown("""
-This platform uses **AI-driven insights** to assess loan applications in real-time.
+This platform uses **data driven insights** to assess loan applications in real-time.
 """)
 
 # Display the Input Data
@@ -117,7 +117,7 @@ if st.button("Assess Application Risk", type="primary"):
         else:
             st.success(f"Requested amount is within safe limits.")
 
-    # 3. EXPLAINABLE INSIGHTS
+    # 3. THE EXPLAINABLE INSIGHTS
     st.divider()
     st.subheader("Automated Insights")
     
@@ -134,4 +134,5 @@ if st.button("Assess Application Risk", type="primary"):
 
 
 st.markdown("---")
+
 st.markdown("© 2025 SecureBank Team | Powered by Streamlit")
