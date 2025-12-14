@@ -10,8 +10,7 @@ import sklearn
 from sklearn.base import BaseEstimator, TransformerMixin
 import sklearn.compose._column_transformer
 
-# This fixes the RemainderColsList compatibilty issue
-# Fixes 'AttributeError: module 'sklearn.compose._column_transformer' has no attribute '_RemainderColsList''
+#This fixes the compatibility issue with the RemainderColsList
 if not hasattr(sklearn.compose._column_transformer, '_RemainderColsList'):
     class _RemainderColsList(list):
         def __getstate__(self):
@@ -27,7 +26,6 @@ st.set_page_config(
     layout="wide"
 )
 
-# --- PATCH: Fix Scikit-Learn Version Mismatch for SimpleImputer ---
 def patch_model_attributes(model):
     from sklearn.impute import SimpleImputer
     if hasattr(model, 'steps'):
@@ -59,12 +57,12 @@ def load_models():
     # 1. Load Loan Classifier Pipeline
     try:
         loaded_model = joblib.load('best_loan_classifier_pipeline.joblib')
-        patch_model_attributes(loaded_model)
+        patch_model_attributes(loaded_model) # Apply patch
         models['loan_pipeline'] = loaded_model
     except FileNotFoundError:
         try:
             loaded_model = joblib.load('best_loan_classifier_pipeline.joblib.gz')
-            patch_model_attributes(loaded_model)
+            patch_model_attributes(loaded_model) # Apply patch
             models['loan_pipeline'] = loaded_model
         except Exception as e:
             models['loan_pipeline'] = None
@@ -76,10 +74,14 @@ def load_models():
     # 2. Load Regression Model
     try:
         with open('regression_model.pkl', 'rb') as f:
-            models['regression'] = pickle.load(f)
+            loaded_model = pickle.load(f)
+            patch_model_attributes(loaded_model) # Apply patch
+            models['regression'] = loaded_model
     except Exception:
         try:
-            models['regression'] = joblib.load('regression_model.pkl')
+            loaded_model = joblib.load('regression_model.pkl')
+            patch_model_attributes(loaded_model) # Apply patch
+            models['regression'] = loaded_model
         except Exception as e:
             models['regression'] = None
             st.warning(f"Regression Model not loaded: {e}")
@@ -87,10 +89,14 @@ def load_models():
     # 3. Load General Classification Model
     try:
         with open('classification_model.pkl', 'rb') as f:
-            models['classifier'] = pickle.load(f)
+            loaded_model = pickle.load(f)
+            patch_model_attributes(loaded_model) # Apply patch
+            models['classifier'] = loaded_model
     except Exception:
         try:
-            models['classifier'] = joblib.load('classification_model.pkl')
+            loaded_model = joblib.load('classification_model.pkl')
+            patch_model_attributes(loaded_model) # Apply patch
+            models['classifier'] = loaded_model
         except Exception as e:
             models['classifier'] = None
             st.warning(f"Classification Model not loaded: {e}")
@@ -111,19 +117,19 @@ def parse_input_string(input_str):
     if not input_str:
         return []
     
-    #   Replace newlines with commas (handles vertical copy-pastes)
+    # 1. Replace newlines with commas (handles vertical copy-pastes)
     cleaned_str = input_str.replace('\n', ',')
     
-    #   Replace non-breaking spaces or other common invisible chars
+    # 2. Replace non-breaking spaces or other common invisible chars
     cleaned_str = cleaned_str.replace('\xa0', ' ')
     
-    #   Split by comma
+    # 3. Split by comma
     tokens = cleaned_str.split(',')
     
-    #   Strip whitespace and filter empty strings
+    # 4. Strip whitespace and filter empty strings
     tokens = [t.strip() for t in tokens if t.strip()]
     
-    #   Convert to floats with detailed error reporting
+    # 5. Convert to floats with detailed error reporting
     result = []
     for i, t in enumerate(tokens):
         try:
@@ -133,39 +139,6 @@ def parse_input_string(input_str):
             
     return result
 
-# --- Helper Function to Create DataFrame from Input ---
-def create_input_dataframe(model, feats, default_col_prefix='col_'):
-    """
-    Creates a DataFrame from the list of features.
-    Attempts to use the model's feature_names_in_ if available.
-    """
-    feature_names = None
-    
-    # Try to find feature names stored in the model
-    if hasattr(model, 'feature_names_in_'):
-        feature_names = model.feature_names_in_
-    
-    # Fallback: Check if it's a pipeline and the final step has names
-    if feature_names is None and hasattr(model, 'steps'):
-        try:
-            feature_names = model.steps[-1][1].feature_names_in_
-        except:
-            pass
-            
-    # Check length compatibility
-    if feature_names is not None:
-        if len(feature_names) != len(feats):
-            st.warning(f"Warning: Model expects {len(feature_names)} features, but you provided {len(feats)}. Attempting to match by position.")
-            # If lengths differ, we might not want to force names, but let's try
-            # If provided features match length, use the names
-    
-    if feature_names is not None and len(feature_names) == len(feats):
-        return pd.DataFrame([feats], columns=feature_names)
-    else:
-        # If no names found, return a DataFrame with default RangeIndex (0, 1, 2...)
-        # This solves the "strings only supported for dataframes" if the issue was passing a numpy array.
-        return pd.DataFrame([feats])
-
 # --- Tabs Interface ---
 tab1, tab2, tab3, tab4 = st.tabs([
     "Loan Classifier", 
@@ -174,7 +147,7 @@ tab1, tab2, tab3, tab4 = st.tabs([
     "Deep Learning"
 ])
 
-# --- TAB 1: The Loan Classifier ---
+# --- TAB 1: The Loan Classifier (Input remains complex, requires DataFrame) ---
 with tab1:
     st.header("Loan Approval Predictor")
     if models.get('loan_pipeline'):
@@ -240,11 +213,11 @@ with tab1:
     else:
         st.warning("Loan model not loaded.")
 
-# --- TAB 2: The Regression Model ---
+# --- TAB 2: The Regression Model---
 with tab2:
     st.header("Numerical Regression")
     if models.get('regression'):
-        st.info("This model expects 20 numeric features.")
+        st.info("This model expects 20 pre-processed numeric features.")
         default_20_feats = ", ".join(["0.5"] * 20)
         
         reg_input = st.text_area("Enter 20 numeric features (comma separated)", 
@@ -254,31 +227,28 @@ with tab2:
         
         if st.button("Predict Value (Regression)"):
             try:
-                # Use robust parser
                 feats = parse_input_string(reg_input)
                 
                 if len(feats) != 20:
                     st.error(f"Input Error: You provided {len(feats)} features, but the model expects exactly 20.")
                 else:
-                    input_df = create_input_dataframe(models['regression'], feats)
+                    # FIX: Pass as NumPy array (1, 20)
+                    input_arr = np.array([feats])
                     
-                    pred = models['regression'].predict(input_df)
+                    pred = models['regression'].predict(input_arr)
                     st.metric(label="Predicted Output", value=f"{pred[0]:.4f}")
             except ValueError as ve:
                 st.error(f"Invalid Input: {ve}")
             except Exception as e:
                 st.error(f"Prediction failed: {e}")
-                # Fallback info
-                if hasattr(models['regression'], 'feature_names_in_'):
-                    st.caption(f"Required features: {list(models['regression'].feature_names_in_)}")
     else:
         st.warning("Regression model not loaded.")
 
-# --- TAB 3: The General Classification ---
+# --- TAB 3: The General Classification---
 with tab3:
     st.header("General Classification")
     if models.get('classifier'):
-        st.info("This model expects 20 numeric features.")
+        st.info("This model expects 20 pre-processed numeric features.")
         default_20_feats = ", ".join(["0.5"] * 20)
         
         class_input = st.text_area("Enter 20 numeric features (comma separated)", 
@@ -288,23 +258,20 @@ with tab3:
         
         if st.button("Classify Input"):
             try:
-                # Use robust parser
                 feats = parse_input_string(class_input)
                 
                 if len(feats) != 20:
                     st.error(f"Input Error: You provided {len(feats)} features, but the model expects exactly 20.")
                 else:
-                    # FIX: Convert to DataFrame instead of Numpy Array
-                    input_df = create_input_dataframe(models['classifier'], feats)
+                    # FIX: Pass as NumPy array (1, 20)
+                    input_arr = np.array([feats])
                     
-                    pred = models['classifier'].predict(input_df)
+                    pred = models['classifier'].predict(input_arr)
                     st.info(f"Predicted Class: {pred[0]}")
             except ValueError as ve:
                 st.error(f"Invalid Input: {ve}")
             except Exception as e:
                 st.error(f"Error processing input: {e}")
-                if hasattr(models['classifier'], 'feature_names_in_'):
-                    st.caption(f"Required features: {list(models['classifier'].feature_names_in_)}")
     else:
         st.warning("Classification model not loaded.")
 
@@ -318,7 +285,6 @@ with tab4:
         
         if st.button("Run Neural Net", type="primary"):
             try:
-                # Use robust parser
                 input_list = parse_input_string(dl_input)
                 
                 if len(input_list) != 69:
