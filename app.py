@@ -10,7 +10,8 @@ import sklearn
 from sklearn.base import BaseEstimator, TransformerMixin
 import sklearn.compose._column_transformer
 
- #This fixes the _RemainderColsList issue with the newer scikit library
+# This fixes the RemainderColsList compatibilty issue
+# Fixes 'AttributeError: module 'sklearn.compose._column_transformer' has no attribute '_RemainderColsList''
 if not hasattr(sklearn.compose._column_transformer, '_RemainderColsList'):
     class _RemainderColsList(list):
         def __getstate__(self):
@@ -26,7 +27,7 @@ st.set_page_config(
     layout="wide"
 )
 
- 
+# --- PATCH: Fix Scikit-Learn Version Mismatch for SimpleImputer ---
 def patch_model_attributes(model):
     from sklearn.impute import SimpleImputer
     if hasattr(model, 'steps'):
@@ -110,19 +111,19 @@ def parse_input_string(input_str):
     if not input_str:
         return []
     
-    #Replace newlines with commas to ensure compatibility
+    #   Replace newlines with commas (handles vertical copy-pastes)
     cleaned_str = input_str.replace('\n', ',')
     
-     #Replaces the non-breaking spaces or other common invisible characters
+    #   Replace non-breaking spaces or other common invisible chars
     cleaned_str = cleaned_str.replace('\xa0', ' ')
     
-    #Splits by comma
+    #   Split by comma
     tokens = cleaned_str.split(',')
     
-    #Gets rid of the whitespace and filter empty strings
+    #   Strip whitespace and filter empty strings
     tokens = [t.strip() for t in tokens if t.strip()]
     
-    #Converts to floats with detailed error reporting.
+    #   Convert to floats with detailed error reporting
     result = []
     for i, t in enumerate(tokens):
         try:
@@ -131,6 +132,39 @@ def parse_input_string(input_str):
             raise ValueError(f"Item {i+1} ('{t}') is not a valid number.")
             
     return result
+
+# --- Helper Function to Create DataFrame from Input ---
+def create_input_dataframe(model, feats, default_col_prefix='col_'):
+    """
+    Creates a DataFrame from the list of features.
+    Attempts to use the model's feature_names_in_ if available.
+    """
+    feature_names = None
+    
+    # Try to find feature names stored in the model
+    if hasattr(model, 'feature_names_in_'):
+        feature_names = model.feature_names_in_
+    
+    # Fallback: Check if it's a pipeline and the final step has names
+    if feature_names is None and hasattr(model, 'steps'):
+        try:
+            feature_names = model.steps[-1][1].feature_names_in_
+        except:
+            pass
+            
+    # Check length compatibility
+    if feature_names is not None:
+        if len(feature_names) != len(feats):
+            st.warning(f"Warning: Model expects {len(feature_names)} features, but you provided {len(feats)}. Attempting to match by position.")
+            # If lengths differ, we might not want to force names, but let's try
+            # If provided features match length, use the names
+    
+    if feature_names is not None and len(feature_names) == len(feats):
+        return pd.DataFrame([feats], columns=feature_names)
+    else:
+        # If no names found, return a DataFrame with default RangeIndex (0, 1, 2...)
+        # This solves the "strings only supported for dataframes" if the issue was passing a numpy array.
+        return pd.DataFrame([feats])
 
 # --- Tabs Interface ---
 tab1, tab2, tab3, tab4 = st.tabs([
@@ -226,13 +260,17 @@ with tab2:
                 if len(feats) != 20:
                     st.error(f"Input Error: You provided {len(feats)} features, but the model expects exactly 20.")
                 else:
-                    input_arr = np.array([feats])
-                    pred = models['regression'].predict(input_arr)
+                    input_df = create_input_dataframe(models['regression'], feats)
+                    
+                    pred = models['regression'].predict(input_df)
                     st.metric(label="Predicted Output", value=f"{pred[0]:.4f}")
             except ValueError as ve:
                 st.error(f"Invalid Input: {ve}")
             except Exception as e:
                 st.error(f"Prediction failed: {e}")
+                # Fallback info
+                if hasattr(models['regression'], 'feature_names_in_'):
+                    st.caption(f"Required features: {list(models['regression'].feature_names_in_)}")
     else:
         st.warning("Regression model not loaded.")
 
@@ -256,12 +294,17 @@ with tab3:
                 if len(feats) != 20:
                     st.error(f"Input Error: You provided {len(feats)} features, but the model expects exactly 20.")
                 else:
-                    pred = models['classifier'].predict([feats])
+                    # FIX: Convert to DataFrame instead of Numpy Array
+                    input_df = create_input_dataframe(models['classifier'], feats)
+                    
+                    pred = models['classifier'].predict(input_df)
                     st.info(f"Predicted Class: {pred[0]}")
             except ValueError as ve:
                 st.error(f"Invalid Input: {ve}")
             except Exception as e:
                 st.error(f"Error processing input: {e}")
+                if hasattr(models['classifier'], 'feature_names_in_'):
+                    st.caption(f"Required features: {list(models['classifier'].feature_names_in_)}")
     else:
         st.warning("Classification model not loaded.")
 
@@ -291,4 +334,3 @@ with tab4:
                 st.error(f"Error: {e}")
     else:
         st.warning("Deep Learning model not loaded.")
-
