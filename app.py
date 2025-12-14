@@ -8,6 +8,17 @@ import os
 import re
 import sklearn
 from sklearn.base import BaseEstimator, TransformerMixin
+import sklearn.compose._column_transformer
+
+ #This fixes the _RemainderColsList issue with the newer scikit library
+if not hasattr(sklearn.compose._column_transformer, '_RemainderColsList'):
+    class _RemainderColsList(list):
+        def __getstate__(self):
+            return list(self)
+        def __setstate__(self, state):
+            self[:] = state
+    sklearn.compose._column_transformer._RemainderColsList = _RemainderColsList
+ 
 
 # --- Page Configuration ---
 st.set_page_config(
@@ -15,53 +26,27 @@ st.set_page_config(
     layout="wide"
 )
 
-# This code block fixes the compatibility issues that were there 
-# This function fixes the 'SimpleImputer' object has no attribute '_fill_dtype' error
-# which happens when loading older models in newer scikit-learn versions.
+ 
 def patch_model_attributes(model):
     from sklearn.impute import SimpleImputer
-    
-    
     if hasattr(model, 'steps'):
         for name, step in model.steps:
             patch_model_attributes(step)
-            
-  
     elif hasattr(model, 'transformers_'):
         for name, transformer, columns in model.transformers_:
-            # transformer can be 'drop', 'passthrough' or an estimator
             if isinstance(transformer, (BaseEstimator, TransformerMixin)):
                 patch_model_attributes(transformer)
-                
- 
     elif isinstance(model, SimpleImputer):
         if not hasattr(model, '_fill_dtype'):
-            # If statistics_ exists, use its dtype, otherwise default to float64
             if hasattr(model, 'statistics_'):
                 model._fill_dtype = model.statistics_.dtype
             else:
                 model._fill_dtype = np.float64
 
 # --- Sidebar: File Debugger ---
-st.sidebar.header("File System Debugger")
-st.sidebar.write(f"Scikit-learn version: {sklearn.__version__}")
-try:
-    files = os.listdir('.')
-    file_info = []
-    for f in files:
-        try:
-            size_bytes = os.path.getsize(f)
-            size_str = f"{size_bytes} bytes"
-            if size_bytes > 1024:
-                size_str = f"{size_bytes / 1024:.1f} KB"
-            if size_bytes > 1024 * 1024:
-                size_str = f"{size_bytes / (1024 * 1024):.1f} MB"
-            file_info.append(f"{f} ({size_str})")
-        except Exception:
-            file_info.append(f"{f} (size unknown)")
-    st.sidebar.code('\n'.join(file_info))
-except Exception as e:
-    st.sidebar.error(f"Could not list files: {e}")
+st.sidebar.header("System Info")
+st.sidebar.write(f"Scikit-learn: {sklearn.__version__}")
+st.sidebar.write(f"TensorFlow: {tf.__version__}")
 
 st.title("ML Loan Dataset Model Deployment Dashboard")
 
@@ -72,15 +57,13 @@ def load_models():
     
     # 1. Load Loan Classifier Pipeline
     try:
-        # Try loading standard .joblib
         loaded_model = joblib.load('best_loan_classifier_pipeline.joblib')
-        patch_model_attributes(loaded_model) # Apply patch
+        patch_model_attributes(loaded_model)
         models['loan_pipeline'] = loaded_model
     except FileNotFoundError:
         try:
-            # Fallback to .gz if it exists
             loaded_model = joblib.load('best_loan_classifier_pipeline.joblib.gz')
-            patch_model_attributes(loaded_model) # Apply patch
+            patch_model_attributes(loaded_model)
             models['loan_pipeline'] = loaded_model
         except Exception as e:
             models['loan_pipeline'] = None
@@ -91,7 +74,6 @@ def load_models():
 
     # 2. Load Regression Model
     try:
-        # Try pickle first, then joblib
         with open('regression_model.pkl', 'rb') as f:
             models['regression'] = pickle.load(f)
     except Exception:
@@ -123,6 +105,33 @@ def load_models():
 
 models = load_models()
 
+# --- Helper Function for Robust Parsing ---
+def parse_input_string(input_str):
+    if not input_str:
+        return []
+    
+    Replace newlines with commas to ensure compatibility
+    cleaned_str = input_str.replace('\n', ',')
+    
+     Replaces the non-breaking spaces or other common invisible characters
+    cleaned_str = cleaned_str.replace('\xa0', ' ')
+    
+    Splits by comma
+    tokens = cleaned_str.split(',')
+    
+    Gets rid of the whitespace and filter empty strings
+    tokens = [t.strip() for t in tokens if t.strip()]
+    
+    Convert to floats with detailed error reporting.
+    result = []
+    for i, t in enumerate(tokens):
+        try:
+            result.append(float(t))
+        except ValueError:
+            raise ValueError(f"Item {i+1} ('{t}') is not a valid number.")
+            
+    return result
+
 # --- Tabs Interface ---
 tab1, tab2, tab3, tab4 = st.tabs([
     "Loan Classifier", 
@@ -152,9 +161,7 @@ with tab1:
             open_acc = st.number_input("Open Accounts", value=5)
             
         if st.button("Predict Loan Status", type="primary"):
-            # Parsing inputs
             term_val = int(term.split()[0]) 
-            
             emp_val = 0
             if emp_length:
                 nums = re.findall(r'\d+', str(emp_length))
@@ -196,18 +203,15 @@ with tab1:
                     st.error(f"Prediction: Rejected (Probability: {proba[0]:.2%})")
             except Exception as e:
                 st.error(f"Prediction Error: {e}")
-                st.write("Debug - Model Steps:", models['loan_pipeline'].named_steps.keys())
     else:
         st.warning("Loan model not loaded.")
 
 # --- TAB 2: The Regression Model ---
 with tab2:
-    st.header("Numerical Regression (20 Inputs Required)")
+    st.header("Numerical Regression")
     if models.get('regression'):
-        st.info("This model expects 20 features.")
-        
-        # Create a default string with 20 zeros
-        default_20_feats = ", ".join(["0.0"] * 20)
+        st.info("This model expects 20 numeric features.")
+        default_20_feats = ", ".join(["0.5"] * 20)
         
         reg_input = st.text_area("Enter 20 numeric features (comma separated)", 
                                 value=default_20_feats, 
@@ -216,18 +220,17 @@ with tab2:
         
         if st.button("Predict Value (Regression)"):
             try:
-                # Convert string -> list of floats
-                feats = [float(x.strip()) for x in reg_input.split(',')]
+                # Use robust parser
+                feats = parse_input_string(reg_input)
                 
-                # Check count
                 if len(feats) != 20:
                     st.error(f"Input Error: You provided {len(feats)} features, but the model expects exactly 20.")
                 else:
                     input_arr = np.array([feats])
                     pred = models['regression'].predict(input_arr)
                     st.metric(label="Predicted Output", value=f"{pred[0]:.4f}")
-            except ValueError:
-                st.error("Invalid Input: Please ensure all values are numbers separated by commas.")
+            except ValueError as ve:
+                st.error(f"Invalid Input: {ve}")
             except Exception as e:
                 st.error(f"Prediction failed: {e}")
     else:
@@ -235,11 +238,9 @@ with tab2:
 
 # --- TAB 3: The General Classification ---
 with tab3:
-    st.header("General Classification (20 Inputs Required)")
+    st.header("General Classification")
     if models.get('classifier'):
-        st.info("This model expects 20 features.")
-        
-        # Reuse logic for 20 features
+        st.info("This model expects 20 numeric features.")
         default_20_feats = ", ".join(["0.5"] * 20)
         
         class_input = st.text_area("Enter 20 numeric features (comma separated)", 
@@ -249,15 +250,16 @@ with tab3:
         
         if st.button("Classify Input"):
             try:
-                feats = [float(x.strip()) for x in class_input.split(',')]
+                # Use robust parser
+                feats = parse_input_string(class_input)
                 
                 if len(feats) != 20:
                     st.error(f"Input Error: You provided {len(feats)} features, but the model expects exactly 20.")
                 else:
                     pred = models['classifier'].predict([feats])
                     st.info(f"Predicted Class: {pred[0]}")
-            except ValueError:
-                st.error("Invalid Input: Please ensure all values are numbers separated by commas.")
+            except ValueError as ve:
+                st.error(f"Invalid Input: {ve}")
             except Exception as e:
                 st.error(f"Error processing input: {e}")
     else:
@@ -265,16 +267,16 @@ with tab3:
 
 # --- TAB 4: Deep Learning ---
 with tab4:
-    st.header("Deep Learning Inference (69 Inputs Required)")
+    st.header("Deep Learning Inference")
     if models.get('deep_learning'):
         st.info("This model expects 69 features.")
-        
         default_vals = ", ".join(["0.0"] * 69)
         dl_input = st.text_area("Enter input vector (comma separated)", default_vals, height=150)
         
         if st.button("Run Neural Net", type="primary"):
             try:
-                input_list = [float(x.strip()) for x in dl_input.split(',')]
+                # Use robust parser
+                input_list = parse_input_string(dl_input)
                 
                 if len(input_list) != 69:
                     st.error(f"Error: Expected 69 inputs, but got {len(input_list)}.")
@@ -283,6 +285,8 @@ with tab4:
                     prediction = models['deep_learning'].predict(input_tensor)
                     st.write("Model Output:")
                     st.dataframe(pd.DataFrame(prediction))
+            except ValueError as ve:
+                st.error(f"Invalid Input: {ve}")
             except Exception as e:
                 st.error(f"Error: {e}")
     else:
