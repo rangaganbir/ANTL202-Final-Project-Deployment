@@ -6,18 +6,8 @@ import pickle
 import tensorflow as tf
 import os
 import re
-import sklearn.compose._column_transformer
-
-# --- This is to get the RemainderColsList working ---
-if not hasattr(sklearn.compose._column_transformer, '_RemainderColsList'):
-    class _RemainderColsList(list):
-        def __getstate__(self):
-            return list(self)
-        def __setstate__(self, state):
-            self[:] = state
-    sklearn.compose._column_transformer._RemainderColsList = _RemainderColsList
-# 
-
+import sklearn
+from sklearn.base import BaseEstimator, TransformerMixin
 
 # --- Page Configuration ---
 st.set_page_config(
@@ -25,9 +15,36 @@ st.set_page_config(
     layout="wide"
 )
 
+# This code block fixes the compatibility issues that were there 
+# This function fixes the 'SimpleImputer' object has no attribute '_fill_dtype' error
+# which happens when loading older models in newer scikit-learn versions.
+def patch_model_attributes(model):
+    from sklearn.impute import SimpleImputer
+    
+    
+    if hasattr(model, 'steps'):
+        for name, step in model.steps:
+            patch_model_attributes(step)
+            
+  
+    elif hasattr(model, 'transformers_'):
+        for name, transformer, columns in model.transformers_:
+            # transformer can be 'drop', 'passthrough' or an estimator
+            if isinstance(transformer, (BaseEstimator, TransformerMixin)):
+                patch_model_attributes(transformer)
+                
+ 
+    elif isinstance(model, SimpleImputer):
+        if not hasattr(model, '_fill_dtype'):
+            # If statistics_ exists, use its dtype, otherwise default to float64
+            if hasattr(model, 'statistics_'):
+                model._fill_dtype = model.statistics_.dtype
+            else:
+                model._fill_dtype = np.float64
+
 # --- Sidebar: File Debugger ---
 st.sidebar.header("File System Debugger")
-st.sidebar.write("Files found in current directory:")
+st.sidebar.write(f"Scikit-learn version: {sklearn.__version__}")
 try:
     files = os.listdir('.')
     file_info = []
@@ -42,7 +59,6 @@ try:
             file_info.append(f"{f} ({size_str})")
         except Exception:
             file_info.append(f"{f} (size unknown)")
-    
     st.sidebar.code('\n'.join(file_info))
 except Exception as e:
     st.sidebar.error(f"Could not list files: {e}")
@@ -55,12 +71,17 @@ def load_models():
     models = {}
     
     # 1. Load Loan Classifier Pipeline
-    # Tries .gz first, then falls back to standard .joblib
     try:
-        models['loan_pipeline'] = joblib.load('best_loan_classifier_pipeline.joblib.gz')
+        # Try loading standard .joblib
+        loaded_model = joblib.load('best_loan_classifier_pipeline.joblib')
+        patch_model_attributes(loaded_model) # Apply patch
+        models['loan_pipeline'] = loaded_model
     except FileNotFoundError:
         try:
-            models['loan_pipeline'] = joblib.load('best_loan_classifier_pipeline.joblib')
+            # Fallback to .gz if it exists
+            loaded_model = joblib.load('best_loan_classifier_pipeline.joblib.gz')
+            patch_model_attributes(loaded_model) # Apply patch
+            models['loan_pipeline'] = loaded_model
         except Exception as e:
             models['loan_pipeline'] = None
             st.error(f"Loan Classifier not found: {e}")
@@ -69,20 +90,27 @@ def load_models():
         st.error(f"Error loading Loan Classifier: {e}")
 
     # 2. Load Regression Model
-    # UPDATED: Changed from pickle.load to joblib.load to handle compression
     try:
-        models['regression'] = joblib.load('regression_model.pkl')
-    except Exception as e:
-        models['regression'] = None
-        st.warning(f"Regression Model not loaded: {e}. (Check if file size > 1KB in sidebar)")
+        # Try pickle first, then joblib
+        with open('regression_model.pkl', 'rb') as f:
+            models['regression'] = pickle.load(f)
+    except Exception:
+        try:
+            models['regression'] = joblib.load('regression_model.pkl')
+        except Exception as e:
+            models['regression'] = None
+            st.warning(f"Regression Model not loaded: {e}")
 
     # 3. Load General Classification Model
-    # UPDATED: Changed from pickle.load to joblib.load to handle compression
     try:
-        models['classifier'] = joblib.load('classification_model.pkl')
-    except Exception as e:
-        models['classifier'] = None
-        st.warning(f"Classification Model not loaded: {e}. (Check if file size > 1KB in sidebar)")
+        with open('classification_model.pkl', 'rb') as f:
+            models['classifier'] = pickle.load(f)
+    except Exception:
+        try:
+            models['classifier'] = joblib.load('classification_model.pkl')
+        except Exception as e:
+            models['classifier'] = None
+            st.warning(f"Classification Model not loaded: {e}")
 
     # 4. Load Deep Learning Model
     try:
@@ -124,10 +152,9 @@ with tab1:
             open_acc = st.number_input("Open Accounts", value=5)
             
         if st.button("Predict Loan Status", type="primary"):
-            # FIX: Convert string inputs to numbers for the model
-            term_val = int(term.split()[0]) # "36 months" -> 36
+            # Parsing inputs
+            term_val = int(term.split()[0]) 
             
-            # Helper to extract numbers from "10+ years" or "< 1 year"
             emp_val = 0
             if emp_length:
                 nums = re.findall(r'\d+', str(emp_length))
@@ -169,48 +196,78 @@ with tab1:
                     st.error(f"Prediction: Rejected (Probability: {proba[0]:.2%})")
             except Exception as e:
                 st.error(f"Prediction Error: {e}")
-                st.write("Debug - Input Columns:", input_data.columns.tolist())
+                st.write("Debug - Model Steps:", models['loan_pipeline'].named_steps.keys())
     else:
         st.warning("Loan model not loaded.")
 
 # --- TAB 2: The Regression Model ---
 with tab2:
-    st.header("Numerical Regression")
+    st.header("Numerical Regression (20 Inputs Required)")
     if models.get('regression'):
-        f1 = st.number_input("Feature 1", value=0.0)
-        f2 = st.number_input("Feature 2", value=0.0)
+        st.info("This model expects 20 features.")
         
-        if st.button("Predict Value"):
-            input_arr = np.array([[f1, f2]])
+        # Create a default string with 20 zeros
+        default_20_feats = ", ".join(["0.0"] * 20)
+        
+        reg_input = st.text_area("Enter 20 numeric features (comma separated)", 
+                                value=default_20_feats, 
+                                height=100,
+                                key="reg_input")
+        
+        if st.button("Predict Value (Regression)"):
             try:
-                pred = models['regression'].predict(input_arr)
-                st.metric(label="Predicted Output", value=f"{pred[0]:.4f}")
+                # Convert string -> list of floats
+                feats = [float(x.strip()) for x in reg_input.split(',')]
+                
+                # Check count
+                if len(feats) != 20:
+                    st.error(f"Input Error: You provided {len(feats)} features, but the model expects exactly 20.")
+                else:
+                    input_arr = np.array([feats])
+                    pred = models['regression'].predict(input_arr)
+                    st.metric(label="Predicted Output", value=f"{pred[0]:.4f}")
+            except ValueError:
+                st.error("Invalid Input: Please ensure all values are numbers separated by commas.")
             except Exception as e:
                 st.error(f"Prediction failed: {e}")
     else:
-        st.warning("Regression model not loaded. Check the file list in the sidebar.")
+        st.warning("Regression model not loaded.")
 
 # --- TAB 3: The General Classification ---
 with tab3:
-    st.header("General Classification")
+    st.header("General Classification (20 Inputs Required)")
     if models.get('classifier'):
-        user_input = st.text_input("Input Features (comma separated)", "1.5, 2.3, 4.0")
+        st.info("This model expects 20 features.")
+        
+        # Reuse logic for 20 features
+        default_20_feats = ", ".join(["0.5"] * 20)
+        
+        class_input = st.text_area("Enter 20 numeric features (comma separated)", 
+                                  value=default_20_feats, 
+                                  height=100,
+                                  key="class_input")
         
         if st.button("Classify Input"):
             try:
-                feats = [float(x.strip()) for x in user_input.split(',')]
-                pred = models['classifier'].predict([feats])
-                st.info(f"Predicted Class: {pred[0]}")
+                feats = [float(x.strip()) for x in class_input.split(',')]
+                
+                if len(feats) != 20:
+                    st.error(f"Input Error: You provided {len(feats)} features, but the model expects exactly 20.")
+                else:
+                    pred = models['classifier'].predict([feats])
+                    st.info(f"Predicted Class: {pred[0]}")
+            except ValueError:
+                st.error("Invalid Input: Please ensure all values are numbers separated by commas.")
             except Exception as e:
                 st.error(f"Error processing input: {e}")
     else:
-        st.warning("Classification model not loaded. Check the file list in the sidebar.")
+        st.warning("Classification model not loaded.")
 
 # --- TAB 4: Deep Learning ---
 with tab4:
-    st.header("Deep Learning Inference")
+    st.header("Deep Learning Inference (69 Inputs Required)")
     if models.get('deep_learning'):
-        st.write("Input Data for Neural Network (Requires 69 features)")
+        st.info("This model expects 69 features.")
         
         default_vals = ", ".join(["0.0"] * 69)
         dl_input = st.text_area("Enter input vector (comma separated)", default_vals, height=150)
@@ -229,4 +286,4 @@ with tab4:
             except Exception as e:
                 st.error(f"Error: {e}")
     else:
-        st.warning("Deep Learning model not loaded. Check the file list in the sidebar.")
+        st.warning("Deep Learning model not loaded.")
