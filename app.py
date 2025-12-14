@@ -54,7 +54,7 @@ st.title("ML Loan Dataset Model Deployment Dashboard")
 def load_models():
     models = {}
     
-    #  Load Loan Classifier Pipeline
+    # 1. Load Loan Classifier Pipeline
     try:
         loaded_model = joblib.load('best_loan_classifier_pipeline.joblib')
         patch_model_attributes(loaded_model)
@@ -71,7 +71,7 @@ def load_models():
         models['loan_pipeline'] = None
         st.error(f"Error loading Loan Classifier: {e}")
 
-    #  Load Regression Model
+    # 2. Load Regression Model
     try:
         with open('regression_model.pkl', 'rb') as f:
             loaded_model = pickle.load(f)
@@ -86,7 +86,7 @@ def load_models():
             models['regression'] = None
             st.warning(f"Regression Model not loaded: {e}")
 
-    #  Load General Classification Model
+    # 3. Load General Classification Model
     try:
         with open('classification_model.pkl', 'rb') as f:
             loaded_model = pickle.load(f)
@@ -101,7 +101,7 @@ def load_models():
             models['classifier'] = None
             st.warning(f"Classification Model not loaded: {e}")
 
-    #  Load Deep Learning Model
+    # 4. Load Deep Learning Model
     try:
         models['deep_learning'] = tf.keras.models.load_model('deep_learning_model.h5')
     except Exception as e:
@@ -185,20 +185,22 @@ with tab1:
             open_acc = st.number_input("Open Accounts", value=5)
             
         if st.button("Predict Loan Status", type="primary"):
+            
+            # --- SANITY CHECK FOR FINANCIAL VIABILITY (FIXING ILLOGICAL APPROVALS) ---
             is_rejected = False
             rejection_reason = ""
             
-            #  Loan to Income Check (Loan should not exceed 5x annual income)
-            if loan_amnt > 5 * annual_inc:
+            # 1. Loan to Income Check (Loan should not exceed 5x annual income)
+            if annual_inc > 0 and loan_amnt > 5 * annual_inc:
                 is_rejected = True
                 rejection_reason = "Manual rejection: Loan amount exceeds 5 times annual income."
             
-            #  Extreme DTI Check (DTI > 45% is usually high-risk)
+            # 2. Extreme DTI Check (DTI > 45% is usually high-risk)
             elif dti > 45.0:
                  is_rejected = True
                  rejection_reason = "Manual rejection: Debt-to-Income ratio exceeds 45.0% threshold."
 
-            #  Low Income Check
+            # 3. Low Income Check
             elif annual_inc < 10000:
                 is_rejected = True
                 rejection_reason = "Manual rejection: Annual income is too low for loan processing."
@@ -207,59 +209,56 @@ with tab1:
             if is_rejected:
                 st.error(f"Prediction: Automatically Rejected (0.00%)")
                 st.warning(rejection_reason)
-                # Skip model prediction entirely
-                return
+            else:
+                # If inputs pass sanity checks, proceed to model prediction
+                term_val = int(term.split()[0]) 
+                emp_val = 0
+                if emp_length:
+                    nums = re.findall(r'\d+', str(emp_length))
+                    if nums:
+                        emp_val = int(nums[0])
 
-
-            # If inputs pass sanity checks, proceed to model prediction
-            term_val = int(term.split()[0]) 
-            emp_val = 0
-            if emp_length:
-                nums = re.findall(r'\d+', str(emp_length))
-                if nums:
-                    emp_val = int(nums[0])
-
-            # This DataFrame contains 20 specific columns required by the Loan model.
-            input_data = pd.DataFrame([{
-                'loan_amount': loan_amnt,
-                'loan_term': term_val, 
-                'interest_rate': int_rate,
-                'annual_income': annual_inc,
-                'credit_score': fico_score,
-                'age': age,
-                'debt_to_income_ratio': dti,
-                'num_of_open_accounts': open_acc,
-                'monthly_income': annual_inc / 12, 
-                'installment': (loan_amnt * (int_rate/100)) / 12,
-                'gender': 'Male',
-                'marital_status': 'Single',
-                'education_level': 'Bachelor',
-                'employment_status': 'Employed',
-                'loan_purpose': 'Debt Consolidation',
-                'grade_subgrade': grade + "1",
-                'delinquency_history': 0,
-                'num_of_delinquencies': 0,
-                'total_credit_limit': 20000,
-                'current_balance': 5000,
-                'public_records': 0,
-                'emp_length': emp_val,
-                'home_ownership': home_ownership 
-            }])
-            
-            try:
-                prediction = models['loan_pipeline'].predict(input_data)[0]
-                proba = models['loan_pipeline'].predict_proba(input_data)[0]
+                # This DataFrame contains 20 specific columns required by the Loan model.
+                input_data = pd.DataFrame([{
+                    'loan_amount': loan_amnt,
+                    'loan_term': term_val, 
+                    'interest_rate': int_rate,
+                    'annual_income': annual_inc,
+                    'credit_score': fico_score,
+                    'age': age,
+                    'debt_to_income_ratio': dti,
+                    'num_of_open_accounts': open_acc,
+                    'monthly_income': annual_inc / 12, 
+                    'installment': (loan_amnt * (int_rate/100)) / 12,
+                    'gender': 'Male',
+                    'marital_status': 'Single',
+                    'education_level': 'Bachelor',
+                    'employment_status': 'Employed',
+                    'loan_purpose': 'Debt Consolidation',
+                    'grade_subgrade': grade + "1",
+                    'delinquency_history': 0,
+                    'num_of_delinquencies': 0,
+                    'total_credit_limit': 20000,
+                    'current_balance': 5000,
+                    'public_records': 0,
+                    'emp_length': emp_val,
+                    'home_ownership': home_ownership 
+                }])
                 
-                if prediction == 1:
-                    st.success(f"Prediction: Approved (Probability: {proba[1]:.2%})")
-                else:
-                    st.error(f"Prediction: Rejected (Probability: {proba[0]:.2%})")
-            except Exception as e:
-                st.error(f"Prediction Error: {e}")
+                try:
+                    prediction = models['loan_pipeline'].predict(input_data)[0]
+                    proba = models['loan_pipeline'].predict_proba(input_data)[0]
+                    
+                    if prediction == 1:
+                        st.success(f"Prediction: Approved (Probability: {proba[1]:.2%})")
+                    else:
+                        st.error(f"Prediction: Rejected (Probability: {proba[0]:.2%})")
+                except Exception as e:
+                    st.error(f"Prediction Error: {e}")
     else:
         st.warning("Loan model not loaded.")
 
-# --- TAB 2: The Regression Model  ---
+# --- TAB 2: The Regression Model (Input forced to named DataFrame) ---
 with tab2:
     st.header("Numerical Regression")
     if models.get('regression'):
@@ -290,7 +289,7 @@ with tab2:
     else:
         st.warning("Regression model not loaded.")
 
-# --- TAB 3: The General Classification  ---
+# --- TAB 3: The General Classification (Input forced to named DataFrame) ---
 with tab3:
     st.header("General Classification")
     if models.get('classifier'):
