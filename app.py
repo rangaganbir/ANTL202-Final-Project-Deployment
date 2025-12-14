@@ -5,9 +5,10 @@ import joblib
 import pickle
 import tensorflow as tf
 import os
+import re
 import sklearn.compose._column_transformer
 
-# --- This fixes the compatibility error
+# --- This is to get the RemainderColsList working ---
 if not hasattr(sklearn.compose._column_transformer, '_RemainderColsList'):
     class _RemainderColsList(list):
         def __getstate__(self):
@@ -15,6 +16,7 @@ if not hasattr(sklearn.compose._column_transformer, '_RemainderColsList'):
         def __setstate__(self, state):
             self[:] = state
     sklearn.compose._column_transformer._RemainderColsList = _RemainderColsList
+# 
 
 
 # --- Page Configuration ---
@@ -23,11 +25,25 @@ st.set_page_config(
     layout="wide"
 )
 
+# --- Sidebar: File Debugger ---
 st.sidebar.header("File System Debugger")
 st.sidebar.write("Files found in current directory:")
 try:
     files = os.listdir('.')
-    st.sidebar.code('\n'.join(files))
+    file_info = []
+    for f in files:
+        try:
+            size_bytes = os.path.getsize(f)
+            size_str = f"{size_bytes} bytes"
+            if size_bytes > 1024:
+                size_str = f"{size_bytes / 1024:.1f} KB"
+            if size_bytes > 1024 * 1024:
+                size_str = f"{size_bytes / (1024 * 1024):.1f} MB"
+            file_info.append(f"{f} ({size_str})")
+        except Exception:
+            file_info.append(f"{f} (size unknown)")
+    
+    st.sidebar.code('\n'.join(file_info))
 except Exception as e:
     st.sidebar.error(f"Could not list files: {e}")
 
@@ -39,6 +55,7 @@ def load_models():
     models = {}
     
     # 1. Load Loan Classifier Pipeline
+    # Tries .gz first, then falls back to standard .joblib
     try:
         models['loan_pipeline'] = joblib.load('best_loan_classifier_pipeline.joblib.gz')
     except FileNotFoundError:
@@ -52,20 +69,20 @@ def load_models():
         st.error(f"Error loading Loan Classifier: {e}")
 
     # 2. Load Regression Model
+    # UPDATED: Changed from pickle.load to joblib.load to handle compression
     try:
-        with open('regression_model.pkl', 'rb') as f:
-            models['regression'] = pickle.load(f)
+        models['regression'] = joblib.load('regression_model.pkl')
     except Exception as e:
         models['regression'] = None
-        st.warning(f"Regression Model not loaded: {e}")
+        st.warning(f"Regression Model not loaded: {e}. (Check if file size > 1KB in sidebar)")
 
     # 3. Load General Classification Model
+    # UPDATED: Changed from pickle.load to joblib.load to handle compression
     try:
-        with open('classification_model.pkl', 'rb') as f:
-            models['classifier'] = pickle.load(f)
+        models['classifier'] = joblib.load('classification_model.pkl')
     except Exception as e:
         models['classifier'] = None
-        st.warning(f"Classification Model not loaded: {e}")
+        st.warning(f"Classification Model not loaded: {e}. (Check if file size > 1KB in sidebar)")
 
     # 4. Load Deep Learning Model
     try:
@@ -107,9 +124,19 @@ with tab1:
             open_acc = st.number_input("Open Accounts", value=5)
             
         if st.button("Predict Loan Status", type="primary"):
+            # FIX: Convert string inputs to numbers for the model
+            term_val = int(term.split()[0]) # "36 months" -> 36
+            
+            # Helper to extract numbers from "10+ years" or "< 1 year"
+            emp_val = 0
+            if emp_length:
+                nums = re.findall(r'\d+', str(emp_length))
+                if nums:
+                    emp_val = int(nums[0])
+
             input_data = pd.DataFrame([{
                 'loan_amount': loan_amnt,
-                'loan_term': term, 
+                'loan_term': term_val, 
                 'interest_rate': int_rate,
                 'annual_income': annual_inc,
                 'credit_score': fico_score,
@@ -129,6 +156,7 @@ with tab1:
                 'total_credit_limit': 20000,
                 'current_balance': 5000,
                 'public_records': 0,
+                'emp_length': emp_val,
             }])
             
             try:
