@@ -186,21 +186,21 @@ with tab1:
             
         if st.button("Predict Loan Status", type="primary"):
             
-            # --- SANITY CHECK FOR FINANCIAL VIABILITY (FIXING ILLOGICAL APPROVALS) ---
+            # --- SANITY CHECK FOR FINANCIAL VIABILITY ---
             is_rejected = False
             rejection_reason = ""
             
-            # 1. Loan to Income Check (Loan should not exceed 5x annual income)
+            # Loan to Income Check (Loan should not exceed 5x annual income)
             if annual_inc > 0 and loan_amnt > 5 * annual_inc:
                 is_rejected = True
                 rejection_reason = "Manual rejection: Loan amount exceeds 5 times annual income."
             
-            # 2. Extreme DTI Check (DTI > 45% is usually high-risk)
+            # Extreme DTI Check (DTI > 45% is usually high-risk)
             elif dti > 45.0:
                  is_rejected = True
                  rejection_reason = "Manual rejection: Debt-to-Income ratio exceeds 45.0% threshold."
 
-            # 3. Low Income Check
+            #  Low Income Check
             elif annual_inc < 10000:
                 is_rejected = True
                 rejection_reason = "Manual rejection: Annual income is too low for loan processing."
@@ -345,3 +345,4 @@ with tab4:
                 st.error(f"Error: {e}")
     else:
         st.warning("Deep Learning model not loaded.")
+
