@@ -1,123 +1,163 @@
 import streamlit as st
 import pandas as pd
-import joblib
 import numpy as np
+import joblib
+import pickle
 import tensorflow as tf
 import os
 
-# 1. This will load the models 
+# --- Page Configuration ---
+st.set_page_config(
+    page_title="ML Loan Dataset Model Dashboard",
+    layout="wide"
+)
+
+st.title("ML Loan Dataset Model Deployment Dashboard")
+st.markdown("""
+This application serves four different machine learning models. 
+Use the tabs below to switch between models and make predictions.
+""")
+
+# --- Model Loading ---
 @st.cache_resource
 def load_models():
-    # --- Classification Model ---
-    # Try loading your specific file first, then fall back to the standard name
-    if os.path.exists('best_loan_classifier_pipeline.joblib'):
-        clf_model = joblib.load('best_loan_classifier_pipeline.joblib')
-    elif os.path.exists('classification_model.pkl'):
-        clf_model = joblib.load('classification_model.pkl')
-    else:
-        clf_model = None
+    models = {}
     
-    # --- Regression Model ---
-    if os.path.exists('regression_model.pkl'):
-        reg_model = joblib.load('regression_model.pkl')
+    # 1. Load Loan Classifier Pipeline (.joblib)
+    # Pipelines often require specific versions of scikit-learn.
+    try:
+        models['loan_pipeline'] = joblib.load('best_loan_classifier_pipeline.joblib')
+    except Exception as e:
+        models['loan_pipeline'] = None
+        st.error(f"Error loading Loan Classifier: {e}")
+
+    # 2. Load Regression Model (.pkl)
+    try:
+        with open('regression_model.pkl', 'rb') as f:
+            models['regression'] = pickle.load(f)
+    except Exception as e:
+        models['regression'] = None
+        # error logged silently or use st.warning if critical
+
+    # 3. Load General Classification Model (.pkl)
+    try:
+        with open('classification_model.pkl', 'rb') as f:
+            models['classifier'] = pickle.load(f)
+    except Exception as e:
+        models['classifier'] = None
+
+    # 4. Load Deep Learning Model (.h5)
+    try:
+        models['deep_learning'] = tf.keras.models.load_model('deep_learning_model.h5')
+    except Exception as e:
+        models['deep_learning'] = None
+        st.warning(f"Deep Learning model could not be loaded: {e}")
+        
+    return models
+
+# Load models once and cache them
+models = load_models()
+
+# --- Tabs Interface ---
+tab1, tab2, tab3, tab4 = st.tabs([
+    "Loan Classifier", 
+    "Regression", 
+    "Classification", 
+    "Deep Learning"
+])
+
+# --- TAB 1: The Loan Classifier ---
+with tab1:
+    st.header("Loan Approval Predictor")
+    if models.get('loan_pipeline'):
+        col1, col2 = st.columns(2)
+        with col1:
+            loan_amnt = st.number_input("Loan Amount ($)", min_value=500, value=10000, step=100)
+            term = st.selectbox("Loan Term", [" 36 months", " 60 months"])
+            int_rate = st.number_input("Interest Rate (%)", min_value=0.0, value=10.5, step=0.1)
+        with col2:
+            annual_inc = st.number_input("Annual Income ($)", min_value=0, value=60000, step=1000)
+            fico_score = st.slider("FICO Score", 300, 850, 700)
+            
+        if st.button("Predict Loan Status", type="primary"):
+            # Construct DataFrame with exact column names expected by the pipeline
+            # NOTE: You may need to adjust these keys based on 'X_train.columns' from your training step
+            input_data = pd.DataFrame([{
+                'loan_amnt': loan_amnt,
+                'term': term,
+                'int_rate': int_rate,
+                'annual_inc': annual_inc,
+                'fico_range_low': fico_score
+            }])
+            
+            try:
+                prediction = models['loan_pipeline'].predict(input_data)[0]
+                proba = models['loan_pipeline'].predict_proba(input_data)[0]
+                
+                # Assuming 1 = Approved, 0 = Rejected (adjust based on your specific labels)
+                if prediction == 1:
+                    st.success(f"Prediction: Approved (Probability: {proba[1]:.2%})")
+                else:
+                    st.error(f"Prediction: Rejected (Probability: {proba[0]:.2%})")
+            except Exception as e:
+                st.error(f"Prediction Error: {e}")
+                st.info("Tip: Check that the input dictionary keys in `app.py` match your training features.")
     else:
-        reg_model = None
+        st.warning("Loan model not loaded. Please check 'best_loan_classifier_pipeline.joblib'.")
 
-    # --- Deep Learning Model ---
-    if os.path.exists('deep_learning_model.h5'):
-        dl_model = tf.keras.models.load_model('deep_learning_model.h5')
+# --- TAB 2: The Regression Model ---
+with tab2:
+    st.header("Numerical Regression")
+    if models.get('regression'):
+        # Dynamic inputs based on simple assumption (adjust as needed)
+        f1 = st.number_input("Feature 1", value=0.0)
+        f2 = st.number_input("Feature 2", value=0.0)
+        
+        if st.button("Predict Value"):
+            input_arr = np.array([[f1, f2]])
+            try:
+                pred = models['regression'].predict(input_arr)
+                st.metric(label="Predicted Output", value=f"{pred[0]:.4f}")
+            except Exception as e:
+                st.error(f"Prediction failed: {e}")
     else:
-        dl_model = None
+        st.warning("Regression model not loaded.")
 
-    return clf_model, reg_model, dl_model
-
-clf_pipeline, reg_pipeline, dl_model = load_models()
-
-# 2. App Title
-st.title("Loan Dataset Application")
-st.markdown("This platform assesses customer risk.")
-
-# 3. Sidebar Inputs
-st.sidebar.header("Customer Information")
-
-def user_input_features():
-    # Numeric Inputs
-    age = st.sidebar.number_input("Age", min_value=18, max_value=100, value=30)
-    annual_income = st.sidebar.number_input("Annual Income", min_value=0, value=50000)
-    monthly_income = annual_income / 12
-    debt_to_income = st.sidebar.slider("Debt-to-Income Ratio", 0.0, 1.0, 0.3)
-    credit_score = st.sidebar.slider("Credit Score", 300, 850, 700)
-    loan_term = st.sidebar.selectbox("Loan Term (Months)", [36, 60])
-    installment = st.sidebar.number_input("Monthly Installment", value=300)
-    open_acc = st.sidebar.number_input("Open Accounts", value=5)
-    total_credit = st.sidebar.number_input("Total Credit Limit", value=20000)
-    current_bal = st.sidebar.number_input("Current Balance", value=5000)
-    delinq_hist = st.sidebar.number_input("Delinquency History (Years)", value=0)
-    num_delinq = st.sidebar.number_input("Number of Delinquencies", value=0)
-    pub_rec = st.sidebar.number_input("Public Records", value=0)
-    interest_rate = st.sidebar.number_input("Interest Rate (%)", value=10.0)
-
-    # Categorical Inputs
-    gender = st.sidebar.selectbox("Gender", ["Male", "Female"])
-    marital = st.sidebar.selectbox("Marital Status", ["Single", "Married", "Divorced"])
-    edu = st.sidebar.selectbox("Education", ["High School", "Bachelor's", "Master's", "PhD", "Associate's"])
-    emp_status = st.sidebar.selectbox("Employment Status", ["Employed", "Unemployed", "Self-Employed", "Retired"])
-    purpose = st.sidebar.selectbox("Loan Purpose", ["Debt consolidation", "Credit card", "Home improvement", "Other"])
-    grade = st.sidebar.selectbox("Grade Subgrade", ["A1", "B1", "C1", "D1", "E1", "F1", "G1"]) 
-
-    data = {
-        'age': age, 'annual_income': annual_income, 'monthly_income': monthly_income,
-        'debt_to_income_ratio': debt_to_income, 'credit_score': credit_score,
-        'interest_rate': interest_rate, 'loan_term': loan_term, 'installment': installment,
-        'num_of_open_accounts': open_acc, 'total_credit_limit': total_credit,
-        'current_balance': current_bal, 'delinquency_history': delinq_hist,
-        'num_of_delinquencies': num_delinq, 'public_records': pub_rec,
-        'gender': gender, 'marital_status': marital, 'education_level': edu,
-        'employment_status': emp_status, 'loan_purpose': purpose, 'grade_subgrade': grade
-    }
-    return pd.DataFrame(data, index=[0])
-
-input_df = user_input_features()
-st.subheader("Customer Profile")
-st.write(input_df)
-
-# 5. This makes the predictions on loan repayment
-if st.button("Assess Risk"):
-    
-    # --- Classification Result ---
-    if clf_pipeline:
-        try:
-            risk_prob = clf_pipeline.predict_proba(input_df)[0][1]
-            risk_pred = "Default" if risk_prob > 0.5 else "Paid Off"
-            if risk_prob > 0.5:
-                st.error(f"High Risk Applicant (Prob: {risk_prob:.2%})")
-            else:
-                st.success(f"Low Risk Applicant (Prob: {risk_prob:.2%})")
-        except Exception as e:
-            st.warning("Error using Classification Model. Check inputs.")
+# --- TAB 3: The General Classification ---
+with tab3:
+    st.header("General Classification")
+    if models.get('classifier'):
+        user_input = st.text_input("Input Features (comma separated)", "1.5, 2.3, 4.0")
+        
+        if st.button("Classify Input"):
+            try:
+                # parsing string input to list/array
+                feats = [float(x.strip()) for x in user_input.split(',')]
+                pred = models['classifier'].predict([feats])
+                st.info(f"Predicted Class: {pred[0]}")
+            except Exception as e:
+                st.error(f"Error processing input: {e}")
     else:
-        st.warning("Classification Model not found.")
+        st.warning("Classification model not loaded.")
 
-    # --- Regression Result ---
-    if reg_pipeline:
-        try:
-            loan_amount_pred = reg_pipeline.predict(input_df)[0]
-            st.metric("Predicted Loan Amount", f"${loan_amount_pred:,.2f}")
-        except:
-            st.warning("Could not predict loan amount.")
+# --- TAB 4: Deep Learning ---
+with tab4:
+    st.header("Deep Learning Inference")
+    if models.get('deep_learning'):
+        st.write("Input Data for Neural Network")
+        dl_input = st.text_area("Enter input vector (comma separated)", "0.1, 0.5, 0.3, 0.2")
+        
+        if st.button("Run Neural Net", type="primary"):
+            try:
+                # Convert csv string to numpy array (1, n_features)
+                input_list = [float(x.strip()) for x in dl_input.split(',')]
+                input_tensor = np.array([input_list])
+                
+                prediction = models['deep_learning'].predict(input_tensor)
+                st.write("Model Output:")
+                st.dataframe(pd.DataFrame(prediction, columns=[f"Class {i}" for i in range(prediction.shape[1])]))
+            except Exception as e:
+                st.error(f"Error: {e}")
+                st.caption("Ensure your input size matches the model's input layer shape.")
     else:
-        st.info("Regression Model not uploaded yet.")
-
-    # --- Deep Learning Result ---
-    if dl_model:
-        try:
-            # DL usually needs scaled data. We try to use the classifier's scaler if available
-            if clf_pipeline:
-                preprocessor = clf_pipeline.named_steps['preprocessor']
-                input_scaled = preprocessor.transform(input_df)
-                dl_prob = dl_model.predict(input_scaled)[0][0]
-                st.metric("DL Risk Score", f"{dl_prob:.2%}")
-        except:
-            st.warning("Could not run Deep Learning model.")
-    else:
-        st.info("Deep Learning Model not uploaded yet.")
+        st.warning("Deep Learning has not been model not loaded.")
