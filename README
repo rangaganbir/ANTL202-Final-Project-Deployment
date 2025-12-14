@@ -1,17 +1,23 @@
+How to Use the Web App
 
-. Instructions to Add this to GitHub
-Since the repository is already created, follow these steps to add the README:
+Access the Platform: Click the live deployment link provided below.
 
-Go to your Repo: rangaganbir/ANTL202-Final-Project-Deployment
+Enter Customer Details: On the left sidebar, input the customer financial information including Annual Income, Credit Score, Loan Term, Purpose, Debt-to-Income Ratio, Employment Status, and Grade.
 
-Create/Edit File:
+Generate Predictions: Click the Assess Risk and Predict Loan button.
 
-If README.md exists: Click the file name, then click the Pencil icon (✏️) in the top right to edit it.
+View Results: The AI will display the Risk Category, Predicted Loan Amount, and Deep Learning Score.
 
-If it does NOT exist: Click the "Add file" button > "Create new file". Name the file README.md.
+How to Run the Code Locally
 
-Paste: Copy the text from the file block above and paste it into the GitHub editor.
+Clone the Repository using: git clone https://github.com/rangaganbir/ANTL202-Final-Project-Deployment
 
-Commit: Scroll to the bottom, write a message like "Added project documentation", and click the green Commit changes button.
+Install Dependencies using: pip install -r requirements.txt
 
-Final Step (After Deployment): Once your Streamlit app is running and you have the website link (e.g., https://antl202-project.streamlit.app), go back to GitHub, edit this README, and replace [INSERT_YOUR_STREAMLIT_APP_LINK_HERE] with the real link.
+Run the Application using: streamlit run app.py
+
+Project Files app.py: The main application script. pkl and h5 files: The trained AI models. loan_dataset_20000.csv: The historical data used for training. Project_Complete_Code.ipynb: The source code for model development.
+
+Deployment Live App: https://ut8rrnujtrrnpau6bwmb6e.streamlit.app
+
+Contributors Ragananbir Casper
