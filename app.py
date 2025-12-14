@@ -10,7 +10,7 @@ import sklearn
 from sklearn.base import BaseEstimator, TransformerMixin
 import sklearn.compose._column_transformer
 
-#This fixes the compatibility issue with the RemainderColsList
+# This fixes the compatibility issue with the RemainderColsList
 if not hasattr(sklearn.compose._column_transformer, '_RemainderColsList'):
     class _RemainderColsList(list):
         def __getstate__(self):
@@ -57,12 +57,12 @@ def load_models():
     # 1. Load Loan Classifier Pipeline
     try:
         loaded_model = joblib.load('best_loan_classifier_pipeline.joblib')
-        patch_model_attributes(loaded_model) # Apply patch
+        patch_model_attributes(loaded_model)
         models['loan_pipeline'] = loaded_model
     except FileNotFoundError:
         try:
             loaded_model = joblib.load('best_loan_classifier_pipeline.joblib.gz')
-            patch_model_attributes(loaded_model) # Apply patch
+            patch_model_attributes(loaded_model)
             models['loan_pipeline'] = loaded_model
         except Exception as e:
             models['loan_pipeline'] = None
@@ -75,12 +75,12 @@ def load_models():
     try:
         with open('regression_model.pkl', 'rb') as f:
             loaded_model = pickle.load(f)
-            patch_model_attributes(loaded_model) # Apply patch
+            patch_model_attributes(loaded_model)
             models['regression'] = loaded_model
     except Exception:
         try:
             loaded_model = joblib.load('regression_model.pkl')
-            patch_model_attributes(loaded_model) # Apply patch
+            patch_model_attributes(loaded_model)
             models['regression'] = loaded_model
         except Exception as e:
             models['regression'] = None
@@ -90,12 +90,12 @@ def load_models():
     try:
         with open('classification_model.pkl', 'rb') as f:
             loaded_model = pickle.load(f)
-            patch_model_attributes(loaded_model) # Apply patch
+            patch_model_attributes(loaded_model)
             models['classifier'] = loaded_model
     except Exception:
         try:
             loaded_model = joblib.load('classification_model.pkl')
-            patch_model_attributes(loaded_model) # Apply patch
+            patch_model_attributes(loaded_model)
             models['classifier'] = loaded_model
         except Exception as e:
             models['classifier'] = None
@@ -117,19 +117,19 @@ def parse_input_string(input_str):
     if not input_str:
         return []
     
-    # 1. Replace newlines with commas (handles vertical copy-pastes)
+    #   Replace newlines with commas (handles vertical copy-pastes)
     cleaned_str = input_str.replace('\n', ',')
     
-    # 2. Replace non-breaking spaces or other common invisible chars
+    #   Replace non-breaking spaces or other common invisible chars
     cleaned_str = cleaned_str.replace('\xa0', ' ')
     
-    # 3. Split by comma
+    #   Split by comma
     tokens = cleaned_str.split(',')
     
-    # 4. Strip whitespace and filter empty strings
+    #   Strip whitespace and filter empty strings
     tokens = [t.strip() for t in tokens if t.strip()]
     
-    # 5. Convert to floats with detailed error reporting
+    #   Convert to floats with detailed error reporting
     result = []
     for i, t in enumerate(tokens):
         try:
@@ -138,6 +138,23 @@ def parse_input_string(input_str):
             raise ValueError(f"Item {i+1} ('{t}') is not a valid number.")
             
     return result
+
+# --- Helper Function to create DataFrame with generic names ---
+def create_generic_dataframe(feats, n_features):
+    if len(feats) != n_features:
+        return None
+        
+    model = models.get('regression') if n_features == 20 else models.get('classifier')
+    
+    # Prioritize stored feature names
+    if model and hasattr(model, 'feature_names_in_') and len(model.feature_names_in_) == n_features:
+        column_names = model.feature_names_in_
+    else:
+        # Default to a generic list if names are not stored
+        column_names = [f'col_{i}' for i in range(n_features)]
+        
+    return pd.DataFrame([feats], columns=column_names)
+
 
 # --- Tabs Interface ---
 tab1, tab2, tab3, tab4 = st.tabs([
@@ -175,6 +192,7 @@ with tab1:
                 if nums:
                     emp_val = int(nums[0])
 
+            # This DataFrame contains 20 specific columns required by the Loan model.
             input_data = pd.DataFrame([{
                 'loan_amount': loan_amnt,
                 'loan_term': term_val, 
@@ -213,11 +231,11 @@ with tab1:
     else:
         st.warning("Loan model not loaded.")
 
-# --- TAB 2: The Regression Model---
+# --- TAB 2: The Regression Model (Input forced to named DataFrame) ---
 with tab2:
     st.header("Numerical Regression")
     if models.get('regression'):
-        st.info("This model expects 20 pre-processed numeric features.")
+        st.info("This model expects 20 pre-processed numeric features. Input must be provided as a DataFrame.")
         default_20_feats = ", ".join(["0.5"] * 20)
         
         reg_input = st.text_area("Enter 20 numeric features (comma separated)", 
@@ -232,10 +250,10 @@ with tab2:
                 if len(feats) != 20:
                     st.error(f"Input Error: You provided {len(feats)} features, but the model expects exactly 20.")
                 else:
-                    # FIX: Pass as NumPy array (1, 20)
-                    input_arr = np.array([feats])
+                    # Pass as a DataFrame with generic column names
+                    input_df = create_generic_dataframe(feats, 20)
                     
-                    pred = models['regression'].predict(input_arr)
+                    pred = models['regression'].predict(input_df)
                     st.metric(label="Predicted Output", value=f"{pred[0]:.4f}")
             except ValueError as ve:
                 st.error(f"Invalid Input: {ve}")
@@ -244,11 +262,11 @@ with tab2:
     else:
         st.warning("Regression model not loaded.")
 
-# --- TAB 3: The General Classification---
+# --- TAB 3: The General Classification (Input forced to named DataFrame) ---
 with tab3:
     st.header("General Classification")
     if models.get('classifier'):
-        st.info("This model expects 20 pre-processed numeric features.")
+        st.info("This model expects 20 pre-processed numeric features. Input must be provided as a DataFrame.")
         default_20_feats = ", ".join(["0.5"] * 20)
         
         class_input = st.text_area("Enter 20 numeric features (comma separated)", 
@@ -263,10 +281,10 @@ with tab3:
                 if len(feats) != 20:
                     st.error(f"Input Error: You provided {len(feats)} features, but the model expects exactly 20.")
                 else:
-                    # FIX: Pass as NumPy array (1, 20)
-                    input_arr = np.array([feats])
+                    # Pass as a DataFrame with generic column names
+                    input_df = create_generic_dataframe(feats, 20)
                     
-                    pred = models['classifier'].predict(input_arr)
+                    pred = models['classifier'].predict(input_df)
                     st.info(f"Predicted Class: {pred[0]}")
             except ValueError as ve:
                 st.error(f"Invalid Input: {ve}")
