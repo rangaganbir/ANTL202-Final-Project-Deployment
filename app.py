@@ -5,6 +5,17 @@ import joblib
 import pickle
 import tensorflow as tf
 import os
+import sklearn.compose._column_transformer
+
+#The patch for compatibillity
+# This block fixes the "Can't get attribute '_RemainderColsList'" error we ran into.
+if not hasattr(sklearn.compose._column_transformer, '_RemainderColsList'):
+    class _RemainderColsList(list):
+        def __getstate__(self):
+            return list(self)
+        def __setstate__(self, state):
+            self[:] = state
+    sklearn.compose._column_transformer._RemainderColsList = _RemainderColsList
 
 # --- Page Configuration ---
 st.set_page_config(
@@ -15,7 +26,7 @@ st.set_page_config(
 st.title("ML Loan Dataset Model Deployment Dashboard")
 st.markdown("""
 This application serves four different machine learning models. 
-Use the tabs below to switch between models and make predictions.
+Use this tabs below to switch between models and make predictions.
 """)
 
 # --- Model Loading ---
@@ -25,7 +36,15 @@ def load_models():
     
     # 1. Load Loan Classifier Pipeline (.joblib)
     try:
+        # Tries to load the compressed file first (best practice for GitHub)
         models['loan_pipeline'] = joblib.load('best_loan_classifier_pipeline.joblib.gz')
+    except FileNotFoundError:
+        try:
+            # Fallback for uncompressed if needed
+            models['loan_pipeline'] = joblib.load('best_loan_classifier_pipeline.joblib')
+        except Exception as e:
+            models['loan_pipeline'] = None
+            st.error(f"Error loading Loan Classifier: {e}")
     except Exception as e:
         models['loan_pipeline'] = None
         st.error(f"Error loading Loan Classifier: {e}")
@@ -80,7 +99,6 @@ with tab1:
             
         if st.button("Predict Loan Status", type="primary"):
             # Construct DataFrame with exact column names expected by the pipeline
-            # NOTE: You may need to adjust these keys based on 'X_train.columns' from your training step
             input_data = pd.DataFrame([{
                 'loan_amnt': loan_amnt,
                 'term': term,
@@ -93,7 +111,7 @@ with tab1:
                 prediction = models['loan_pipeline'].predict(input_data)[0]
                 proba = models['loan_pipeline'].predict_proba(input_data)[0]
                 
-                # Assuming 1 = Approved, 0 = Rejected (adjust based on your specific labels)
+                # Assuming 1 = Approved, 0 = Rejected
                 if prediction == 1:
                     st.success(f"Prediction: Approved (Probability: {proba[1]:.2%})")
                 else:
@@ -102,7 +120,7 @@ with tab1:
                 st.error(f"Prediction Error: {e}")
                 st.info("Tip: Check that the input dictionary keys in `app.py` match your training features.")
     else:
-        st.warning("Loan model not loaded. Please check 'best_loan_classifier_pipeline.joblib'.")
+        st.warning("Loan model not loaded. Please check 'best_loan_classifier_pipeline.joblib.gz'.")
 
 # --- TAB 2: The Regression Model ---
 with tab2:
@@ -153,10 +171,9 @@ with tab4:
                 
                 prediction = models['deep_learning'].predict(input_tensor)
                 st.write("Model Output:")
-                st.dataframe(pd.DataFrame(prediction, columns=[f"Class {i}" for i in range(prediction.shape[1])]))
+                st.dataframe(pd.DataFrame(prediction))
             except Exception as e:
                 st.error(f"Error: {e}")
                 st.caption("Ensure your input size matches the model's input layer shape.")
     else:
-        st.warning("Deep Learning has not been model not loaded.")
-
+        st.warning("Deep Learning model not loaded.")
