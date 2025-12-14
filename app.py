@@ -24,9 +24,8 @@ def load_models():
     models = {}
     
     # 1. Load Loan Classifier Pipeline (.joblib)
-    # Pipelines often require specific versions of scikit-learn.
     try:
-        models['loan_pipeline'] = joblib.load('best_loan_classifier_pipeline.joblib')
+        models['loan_pipeline'] = joblib.load('best_loan_classifier_pipeline.joblib.gz')
     except Exception as e:
         models['loan_pipeline'] = None
         st.error(f"Error loading Loan Classifier: {e}")
@@ -109,7 +108,6 @@ with tab1:
 with tab2:
     st.header("Numerical Regression")
     if models.get('regression'):
-        # Dynamic inputs based on simple assumption (adjust as needed)
         f1 = st.number_input("Feature 1", value=0.0)
         f2 = st.number_input("Feature 2", value=0.0)
         
@@ -161,3 +159,4 @@ with tab4:
                 st.caption("Ensure your input size matches the model's input layer shape.")
     else:
         st.warning("Deep Learning has not been model not loaded.")
+
