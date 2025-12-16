@@ -2,11 +2,11 @@ How to Use the Web App
 
 Access the Platform: Click the live deployment link provided below.
 
-Enter your Customer Details: On the left sidebar, input the customer financial information including Annual Income, Credit Score, Loan Term, Purpose, Debt-to-Income Ratio, Employment Status, and Grade.
+Enter your Customer Details: input the customer financial information including Annual Income, Credit Score, Loan Amount, Debt-to-Income Ratio, Employment Length, Homeownership Status, Open Accounts, Grade, Interest Rate, Loan Term
 
 Generate Predictions: Click the Assess Risk and Predict Loan button.
 
-View Results: The AI will display the Risk Category, Predicted Loan Amount, and Deep Learning Score.
+View Results: The program will display the Risk Category, Predicted Loan Amount, and Deep Learning Score.
 
 How to Run the Code Locally
 
@@ -20,4 +20,5 @@ Project Files app.py: The main application script. pkl and h5 files: The trained
 
 Deployment Live App: https://ut8rrnujtrrnpau6bwmb6e.streamlit.app
 
-Contributors Ragananbir Casper
+Contributors Ragananbir and Casper
+
